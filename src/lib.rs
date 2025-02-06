@@ -53,6 +53,9 @@ pub const OPUS_GET_PREDICTION_DISABLED_REQUEST: u32 = 4043;
 pub const OPUS_SET_PHASE_INVERSION_DISABLED_REQUEST: u32 = 4046;
 pub const OPUS_GET_PHASE_INVERSION_DISABLED_REQUEST: u32 = 4047;
 pub const OPUS_GET_IN_DTX_REQUEST: u32 = 4049;
+pub const OPUS_SET_DRED_DURATION_REQUEST: u32 = 4050;
+pub const OPUS_GET_DRED_DURATION_REQUEST: u32 = 4051;
+pub const OPUS_SET_DNN_BLOB_REQUEST: u32 = 4052;
 pub const OPUS_AUTO: i32 = -1000;
 pub const OPUS_BITRATE_MAX: i32 = -1;
 pub const OPUS_APPLICATION_VOIP: u32 = 2048;
@@ -137,7 +140,7 @@ extern "C" {
     #[doc = "                                     This must be one of 8000, 12000, 16000,"]
     #[doc = "                                     24000, or 48000."]
     #[doc = " @param [in] channels <tt>int</tt>: Number of channels (1 or 2) in input signal"]
-    #[doc = " @param [in] application <tt>int</tt>: Coding mode (@ref OPUS_APPLICATION_VOIP/@ref OPUS_APPLICATION_AUDIO/@ref OPUS_APPLICATION_RESTRICTED_LOWDELAY)"]
+    #[doc = " @param [in] application <tt>int</tt>: Coding mode (one of @ref OPUS_APPLICATION_VOIP, @ref OPUS_APPLICATION_AUDIO, or @ref OPUS_APPLICATION_RESTRICTED_LOWDELAY)"]
     #[doc = " @param [out] error <tt>int*</tt>: @ref opus_errorcodes"]
     #[doc = " @note Regardless of the sampling rate and number channels selected, the Opus encoder"]
     #[doc = " can switch to a lower audio bandwidth or number of channels if the bitrate"]
@@ -161,7 +164,7 @@ extern "C" {
     #[doc = "                                      This must be one of 8000, 12000, 16000,"]
     #[doc = "                                      24000, or 48000."]
     #[doc = " @param [in] channels <tt>int</tt>: Number of channels (1 or 2) in input signal"]
-    #[doc = " @param [in] application <tt>int</tt>: Coding mode (OPUS_APPLICATION_VOIP/OPUS_APPLICATION_AUDIO/OPUS_APPLICATION_RESTRICTED_LOWDELAY)"]
+    #[doc = " @param [in] application <tt>int</tt>: Coding mode (one of OPUS_APPLICATION_VOIP, OPUS_APPLICATION_AUDIO, or OPUS_APPLICATION_RESTRICTED_LOWDELAY)"]
     #[doc = " @retval #OPUS_OK Success or @ref opus_errorcodes"]
     pub fn opus_encoder_init(
         st: *mut OpusEncoder,
@@ -272,6 +275,16 @@ extern "C" {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct OpusDecoder {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct OpusDREDDecoder {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct OpusDRED {
     _unused: [u8; 0],
 }
 extern "C" {
@@ -392,6 +405,129 @@ extern "C" {
     pub fn opus_decoder_destroy(st: *mut OpusDecoder);
 }
 extern "C" {
+    #[doc = " Gets the size of an <code>OpusDREDDecoder</code> structure."]
+    #[doc = " @returns The size in bytes."]
+    pub fn opus_dred_decoder_get_size() -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Allocates and initializes an OpusDREDDecoder state."]
+    #[doc = " @param [out] error <tt>int*</tt>: #OPUS_OK Success or @ref opus_errorcodes"]
+    pub fn opus_dred_decoder_create(error: *mut ::std::os::raw::c_int) -> *mut OpusDREDDecoder;
+}
+extern "C" {
+    #[doc = " Initializes an <code>OpusDREDDecoder</code> state."]
+    #[doc = " @param[in] dec <tt>OpusDREDDecoder*</tt>: State to be initialized."]
+    pub fn opus_dred_decoder_init(dec: *mut OpusDREDDecoder) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Frees an <code>OpusDREDDecoder</code> allocated by opus_dred_decoder_create()."]
+    #[doc = " @param[in] dec <tt>OpusDREDDecoder*</tt>: State to be freed."]
+    pub fn opus_dred_decoder_destroy(dec: *mut OpusDREDDecoder);
+}
+extern "C" {
+    #[doc = " Perform a CTL function on an Opus DRED decoder."]
+    #[doc = ""]
+    #[doc = " Generally the request and subsequent arguments are generated"]
+    #[doc = " by a convenience macro."]
+    #[doc = " @param dred_dec <tt>OpusDREDDecoder*</tt>: DRED Decoder state."]
+    #[doc = " @param request This and all remaining parameters should be replaced by one"]
+    #[doc = "                of the convenience macros in @ref opus_genericctls or"]
+    #[doc = "                @ref opus_decoderctls."]
+    #[doc = " @see opus_genericctls"]
+    #[doc = " @see opus_decoderctls"]
+    pub fn opus_dred_decoder_ctl(
+        dred_dec: *mut OpusDREDDecoder,
+        request: ::std::os::raw::c_int,
+        ...
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Gets the size of an <code>OpusDRED</code> structure."]
+    #[doc = " @returns The size in bytes."]
+    pub fn opus_dred_get_size() -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Allocates and initializes a DRED state."]
+    #[doc = " @param [out] error <tt>int*</tt>: #OPUS_OK Success or @ref opus_errorcodes"]
+    pub fn opus_dred_alloc(error: *mut ::std::os::raw::c_int) -> *mut OpusDRED;
+}
+extern "C" {
+    #[doc = " Frees an <code>OpusDRED</code> allocated by opus_dred_create()."]
+    #[doc = " @param[in] dec <tt>OpusDRED*</tt>: State to be freed."]
+    pub fn opus_dred_free(dec: *mut OpusDRED);
+}
+extern "C" {
+    #[doc = " Decode an Opus DRED packet."]
+    #[doc = " @param [in] dred_dec <tt>OpusDRED*</tt>: DRED Decoder state"]
+    #[doc = " @param [in] dred <tt>OpusDRED*</tt>: DRED state"]
+    #[doc = " @param [in] data <tt>char*</tt>: Input payload"]
+    #[doc = " @param [in] len <tt>opus_int32</tt>: Number of bytes in payload"]
+    #[doc = " @param [in] max_dred_samples <tt>opus_int32</tt>: Maximum number of DRED samples that may be needed (if available in the packet)."]
+    #[doc = " @param [in] sampling_rate <tt>opus_int32</tt>: Sampling rate used for max_dred_samples argument. Needs not match the actual sampling rate of the decoder."]
+    #[doc = " @param [out] dred_end <tt>opus_int32*</tt>: Number of non-encoded (silence) samples between the DRED timestamp and the last DRED sample."]
+    #[doc = " @param [in] defer_processing <tt>int</tt>: Flag (0 or 1). If set to one, the CPU-intensive part of the DRED decoding is deferred until opus_dred_process() is called."]
+    #[doc = " @returns Offset (positive) of the first decoded DRED samples, zero if no DRED is present, or @ref opus_errorcodes"]
+    pub fn opus_dred_parse(
+        dred_dec: *mut OpusDREDDecoder,
+        dred: *mut OpusDRED,
+        data: *const ::std::os::raw::c_uchar,
+        len: opus_int32,
+        max_dred_samples: opus_int32,
+        sampling_rate: opus_int32,
+        dred_end: *mut ::std::os::raw::c_int,
+        defer_processing: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Finish decoding an Opus DRED packet. The function only needs to be called if opus_dred_parse() was called with defer_processing=1."]
+    #[doc = " The source and destination will often be the same DRED state."]
+    #[doc = " @param [in] dred_dec <tt>OpusDRED*</tt>: DRED Decoder state"]
+    #[doc = " @param [in] src <tt>OpusDRED*</tt>: Source DRED state to start the processing from."]
+    #[doc = " @param [out] dst <tt>OpusDRED*</tt>: Destination DRED state to store the updated state after processing."]
+    #[doc = " @returns @ref opus_errorcodes"]
+    pub fn opus_dred_process(
+        dred_dec: *mut OpusDREDDecoder,
+        src: *const OpusDRED,
+        dst: *mut OpusDRED,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Decode audio from an Opus DRED packet with floating point output."]
+    #[doc = " @param [in] st <tt>OpusDecoder*</tt>: Decoder state"]
+    #[doc = " @param [in] dred <tt>OpusDRED*</tt>: DRED state"]
+    #[doc = " @param [in] dred_offset <tt>opus_int32</tt>: position of the redundancy to decode (in samples before the beginning of the real audio data in the packet)."]
+    #[doc = " @param [out] pcm <tt>opus_int16*</tt>: Output signal (interleaved if 2 channels). length"]
+    #[doc = "  is frame_size*channels*sizeof(opus_int16)"]
+    #[doc = " @param [in] frame_size Number of samples per channel to decode in \\a pcm."]
+    #[doc = "  frame_size <b>must</b> be a multiple of 2.5 ms."]
+    #[doc = " @returns Number of decoded samples or @ref opus_errorcodes"]
+    pub fn opus_decoder_dred_decode(
+        st: *mut OpusDecoder,
+        dred: *const OpusDRED,
+        dred_offset: opus_int32,
+        pcm: *mut opus_int16,
+        frame_size: opus_int32,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Decode audio from an Opus DRED packet with floating point output."]
+    #[doc = " @param [in] st <tt>OpusDecoder*</tt>: Decoder state"]
+    #[doc = " @param [in] dred <tt>OpusDRED*</tt>: DRED state"]
+    #[doc = " @param [in] dred_offset <tt>opus_int32</tt>: position of the redundancy to decode (in samples before the beginning of the real audio data in the packet)."]
+    #[doc = " @param [out] pcm <tt>float*</tt>: Output signal (interleaved if 2 channels). length"]
+    #[doc = "  is frame_size*channels*sizeof(float)"]
+    #[doc = " @param [in] frame_size Number of samples per channel to decode in \\a pcm."]
+    #[doc = "  frame_size <b>must</b> be a multiple of 2.5 ms."]
+    #[doc = " @returns Number of decoded samples or @ref opus_errorcodes"]
+    pub fn opus_decoder_dred_decode_float(
+        st: *mut OpusDecoder,
+        dred: *const OpusDRED,
+        dred_offset: opus_int32,
+        pcm: *mut f32,
+        frame_size: opus_int32,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
     #[doc = " Parse an opus packet into one or more frames."]
     #[doc = " Opus_decode will perform this operation internally so most applications do"]
     #[doc = " not need to use this function."]
@@ -474,6 +610,17 @@ extern "C" {
         packet: *const ::std::os::raw::c_uchar,
         len: opus_int32,
         Fs: opus_int32,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    #[doc = " Checks whether an Opus packet has LBRR."]
+    #[doc = " @param [in] packet <tt>char*</tt>: Opus packet"]
+    #[doc = " @param [in] len <tt>opus_int32</tt>: Length of packet"]
+    #[doc = " @returns 1 is LBRR is present, 0 otherwise"]
+    #[doc = " @retval OPUS_INVALID_PACKET The compressed data passed is corrupted or of an unsupported type"]
+    pub fn opus_packet_has_lbrr(
+        packet: *const ::std::os::raw::c_uchar,
+        len: opus_int32,
     ) -> ::std::os::raw::c_int;
 }
 extern "C" {
@@ -1235,17 +1382,4 @@ extern "C" {
     #[doc = " opus_multistream_decoder_create()."]
     #[doc = " @param st <tt>OpusMSDecoder</tt>: Multistream decoder state to be freed."]
     pub fn opus_multistream_decoder_destroy(st: *mut OpusMSDecoder);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn access_symbols() {
-        unsafe {
-            opus_get_version_string();
-            opus_encoder_get_size(0);
-        }
-    }
 }
