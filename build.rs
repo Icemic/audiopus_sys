@@ -62,7 +62,6 @@ fn link_opus(is_static: bool, opus_build_dir: impl Display) {
     println!("cargo:rustc-link-search=native={}/lib", opus_build_dir);
 }
 
-#[cfg(any(unix, target_env = "gnu"))]
 fn find_via_pkg_config(is_static: bool) -> bool {
     pkg_config::Config::new()
         .statik(is_static)
@@ -81,13 +80,12 @@ fn find_via_pkg_config(is_static: bool) -> bool {
 /// if the `static`-feature is enabled, the environment variable
 /// `LIBOPUS_STATIC` or `OPUS_STATIC` is set.
 fn default_library_linking() -> bool {
-    #[cfg(any(windows, target_os = "macos", target_env = "musl"))]
-    {
+    if cfg!(any(windows, target_os = "macos", target_env = "musl")) {
         true
-    }
-    #[cfg(any(target_os = "freebsd", all(unix, target_env = "gnu")))]
-    {
+    } else if cfg!(any(target_os = "freebsd", all(unix, target_env = "gnu"))) {
         false
+    } else {
+        unreachable!("Unsupported target environment.");
     }
 }
 
@@ -128,8 +126,7 @@ fn main() {
 
     let is_static = is_static_build();
 
-    #[cfg(any(unix, target_env = "gnu"))]
-    {
+    if cfg!(any(unix, target_env = "gnu")) {
         if std::env::var("LIBOPUS_NO_PKG").is_ok() || std::env::var("OPUS_NO_PKG").is_ok() {
             println!("cargo:info=Bypassed `pkg-config`.");
         } else if find_via_pkg_config(is_static) {
