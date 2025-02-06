@@ -47,7 +47,16 @@ fn build_opus(is_static: bool) {
     );
 
     println!("cargo:info=Building Opus via CMake.");
-    let opus_build_dir = cmake::build(opus_path);
+
+    let mut opus_builder = cmake::Config::new(opus_path);
+
+    opus_builder.profile("Release");
+
+    if is_static {
+        opus_builder.define("OPUS_STATIC_RUNTIME", "ON");
+    }
+
+    let opus_build_dir = opus_builder.build();
     link_opus(is_static, opus_build_dir.display())
 }
 
