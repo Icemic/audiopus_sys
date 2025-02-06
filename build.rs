@@ -56,6 +56,28 @@ fn build_opus(is_static: bool) {
         opus_builder.define("OPUS_STATIC_RUNTIME", "ON");
     }
 
+    // cmake crate cannot handle cross-compile for Android (using cargo-ndk) well
+    // so we need to manually set the toolchain file and other variables
+    if is_cargo_ndk() {
+        let ndk_path = find_android_ndk_path().expect("Could not find Android NDK");
+        let cmake_toolchain_path = find_android_ndk_path()
+            .map(|p| format!("{}/build/cmake/android.toolchain.cmake", p))
+            .expect("Could not find Android NDK");
+        let ninja_path = find_android_ninja().expect("Could not find ninja in Android SDK");
+        let platform =
+            env::var("CARGO_NDK_ANDROID_PLATFORM").expect("Could not find Android platform");
+        let android_abi = env::var("CARGO_NDK_ANDROID_TARGET").expect("Could not find Android ABI");
+
+        opus_builder
+            .define("CMAKE_TOOLCHAIN_FILE", cmake_toolchain_path)
+            .define("ANDROID_NDK", ndk_path)
+            .define("ANDROID_ABI", android_abi)
+            .define("ANDROID_PLATFORM", format!("android-{platform}"))
+            .define("CMAKE_MAKE_PROGRAM", ninja_path)
+            .define("CMAKE_SYSTEM_NAME", "Android")
+            .generator("Ninja");
+    }
+
     let opus_build_dir = opus_builder.build();
     link_opus(is_static, opus_build_dir.display())
 }
@@ -126,6 +148,84 @@ fn is_static_build() -> bool {
         println!("cargo:info=No feature or environment variable found, linking by default.");
 
         default_library_linking()
+    }
+}
+
+fn is_cargo_ndk() -> bool {
+    // cargo-ndk sets this variable so we use it to detect if we are cross-compiling for android
+    env::var("CARGO_NDK_ANDROID_PLATFORM").is_ok()
+}
+
+fn find_android_sdk_path() -> Option<String> {
+    if let Ok(sdk_path) = env::var("ANDROID_HOME") {
+        Some(sdk_path)
+    } else if let Ok(sdk_path) = env::var("ANDROID_SDK_HOME") {
+        Some(sdk_path)
+    } else {
+        None
+    }
+}
+
+fn find_android_ndk_path() -> Option<String> {
+    if let Ok(ndk_path) = env::var("ANDROID_NDK_HOME") {
+        Some(ndk_path)
+    } else if let Ok(ndk_path) = env::var("ANDROID_NDK_ROOT") {
+        Some(ndk_path)
+    } else if let Some(sdk_path) = find_android_sdk_path() {
+        let sdk_path = Path::new(&sdk_path);
+        sdk_path.join("ndk").read_dir().ok().and_then(|entries| {
+            entries
+                .filter_map(|entry| {
+                    entry.ok().and_then(|entry| {
+                        if entry.file_type().ok()?.is_dir() {
+                            entry.file_name().into_string().ok()
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .next()
+                .map(|ndk_version| {
+                    sdk_path
+                        .join("ndk")
+                        .join(ndk_version)
+                        .to_string_lossy()
+                        .to_string()
+                })
+        })
+    } else {
+        None
+    }
+}
+
+// find ninja executable in android sdk
+fn find_android_ninja() -> Option<String> {
+    if let Some(sdk_path) = find_android_sdk_path() {
+        let sdk_path = Path::new(&sdk_path);
+        sdk_path.join("cmake").read_dir().ok().and_then(|entries| {
+            entries
+                .filter_map(|entry| {
+                    entry.ok().and_then(|entry| {
+                        if entry.file_type().ok()?.is_dir() {
+                            entry.file_name().into_string().ok()
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .next()
+                .map(|cmake_version| {
+                    sdk_path
+                        .join("cmake")
+                        .join(cmake_version)
+                        .join("bin")
+                        .join("ninja")
+                        .to_string_lossy()
+                        .to_string()
+                })
+        })
+    } else {
+        None
     }
 }
 
