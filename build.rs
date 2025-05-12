@@ -225,6 +225,15 @@ fn find_android_ninja() -> Option<String> {
                 })
         })
     } else {
+        // check if the `ninja` executable is in the PATH
+        if let Ok(path) = env::var("PATH") {
+            for entry in path.split(':') {
+                let entry_path = Path::new(entry).join("ninja");
+                if entry_path.exists() {
+                    return Some(entry_path.to_string_lossy().to_string());
+                }
+            }
+        }
         None
     }
 }
