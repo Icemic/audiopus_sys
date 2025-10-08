@@ -242,6 +242,15 @@ fn main() {
     #[cfg(feature = "generate_binding")]
     generate_binding();
 
+    let target = env::var("TARGET").unwrap();
+
+    // Detect WASM target
+    if target.starts_with("wasm32") {
+        println!("cargo:warning=Building for WASM target: {}", target);
+        build_opus_wasm_decoder();
+        return;
+    }
+
     let is_static = is_static_build();
 
     if cfg!(any(unix, target_env = "gnu")) {
@@ -261,4 +270,211 @@ fn main() {
     } else {
         build_opus(is_static);
     }
+}
+
+/// Build Opus for WASM target
+///
+/// Use cc crate to directly compile C source files, avoiding CMake dependencies.
+/// Automatically obtain source file list by parsing official Opus .mk files.
+fn build_opus_wasm_decoder() {
+    println!("cargo:info=Building Opus (full: encoder+decoder) for WASM using cc crate");
+
+    let mut build = cc::Build::new();
+
+    // === Basic configuration ===
+    build
+        .target("wasm32-unknown-unknown")
+        .opt_level(2)
+        .include("opus/include")
+        .include("opus/celt")
+        .include("opus/silk")
+        .include("opus/silk/float")
+        .include("src/wasm_include");
+
+    // === Define necessary macros ===
+    build
+        .define("OPUS_BUILD", None)
+        .define("USE_ALLOCA", None)
+        .define("HAVE_LRINT", None)
+        .define("HAVE_LRINTF", None)
+        .define("OVERRIDE_OPUS_ALLOC", None)
+        .define("OVERRIDE_OPUS_FREE", None)
+        .define("OVERRIDE_OPUS_REALLOC", None)
+        .define("OVERRIDE_OPUS_ALLOC_SCRATCH", None)
+        .define("NONTHREADSAFE_PSEUDOSTACK", None)
+        .define("OPUS_EXPORT=", None)
+        .define("VAR_ARRAYS", None)
+        // Floating point configuration (mutually exclusive with FIXED_POINT)
+        .define("FLOATING_POINT", None);
+
+    // Force include custom memory allocation header file
+    build.flag("-include./src/wasm_include/opus_alloc.h");
+
+    // === Parse official .mk files to get source files ===
+    println!("cargo:info=Parsing Opus source lists from .mk files");
+
+    let opus_sources = parse_makefile_sources(
+        "opus/opus_sources.mk",
+        &["OPUS_SOURCES", "OPUS_SOURCES_FLOAT"],
+    );
+
+    let celt_sources = parse_makefile_sources("opus/celt_sources.mk", &["CELT_SOURCES"]);
+
+    let silk_sources = parse_makefile_sources(
+        "opus/silk_sources.mk",
+        &["SILK_SOURCES", "SILK_SOURCES_FLOAT"],
+    );
+
+    // Filter out non-WASM-compatible source files
+    let all_sources: Vec<String> = opus_sources
+        .into_iter()
+        .chain(celt_sources)
+        .chain(silk_sources)
+        .filter(|s| is_wasm_compatible(s))
+        .collect();
+
+    println!(
+        "cargo:info=Found {} source files for WASM",
+        all_sources.len()
+    );
+
+    // Add source files to build
+    for source in &all_sources {
+        let full_path = format!("opus/{}", source);
+        build.file(&full_path);
+    }
+
+    println!("cargo:info=Compiling Opus library for WASM");
+    build.compile("opus");
+
+    println!("cargo:info=Successfully built Opus (full) for WASM");
+}
+
+/// Parse Makefile (.mk) files, extract source file list
+///
+/// # Parameters
+/// - `mk_file`: .mk file path
+/// - `variable_names`: List of variable names to extract (e.g., "OPUS_SOURCES", "OPUS_SOURCES_FLOAT")
+///
+/// # Returns
+/// List of source file paths (relative to opus/ directory)
+fn parse_makefile_sources(mk_file: &str, variable_names: &[&str]) -> Vec<String> {
+    let content = std::fs::read_to_string(mk_file)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", mk_file, e));
+
+    let mut sources = Vec::new();
+    let mut in_target_var = false;
+    let mut current_parsing_var: Option<String> = None;
+    let mut var_file_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+
+        // Skip comments and empty lines
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+
+        // Check if it's a variable definition (contains =)
+        if line.contains('=') {
+            // Get variable name
+            let var_name = line.split('=').next().unwrap().trim();
+
+            // Check if it's one of our target variables
+            if variable_names.contains(&var_name) {
+                in_target_var = true;
+                current_parsing_var = Some(var_name.to_string());
+                println!("cargo:info=    Start parsing variable: {}", var_name);
+
+                // Check if there are files in the same line
+                if let Some(after_eq) = line.split('=').nth(1) {
+                    let after_eq = after_eq.trim();
+                    if after_eq.ends_with(".c \\") {
+                        let file = after_eq.trim_end_matches(" \\").trim();
+                        sources.push(file.to_string());
+                        *var_file_counts.entry(var_name.to_string()).or_insert(0) += 1;
+                    } else if after_eq.ends_with(".c") && !after_eq.is_empty() {
+                        sources.push(after_eq.trim().to_string());
+                        *var_file_counts.entry(var_name.to_string()).or_insert(0) += 1;
+                        in_target_var = false; // Variable definition ends (last file without \)
+                        if let Some(ref vname) = current_parsing_var {
+                            println!(
+                                "cargo:info=    {} parsing completed: {} files",
+                                vname,
+                                var_file_counts.get(vname).unwrap_or(&0)
+                            );
+                        }
+                        current_parsing_var = None;
+                    }
+                }
+            } else {
+                // This is another variable, exit parsing of current target variable
+                if in_target_var {
+                    if let Some(ref vname) = current_parsing_var {
+                        println!(
+                            "cargo:info=    {} parsing completed: {} files",
+                            vname,
+                            var_file_counts.get(vname).unwrap_or(&0)
+                        );
+                    }
+                }
+                in_target_var = false;
+                current_parsing_var = None;
+            }
+            continue;
+        }
+
+        // If in target variable definition, extract filename
+        if in_target_var {
+            if line.ends_with(".c \\") {
+                let file = line.trim_end_matches(" \\").trim();
+                if !file.is_empty() {
+                    sources.push(file.to_string());
+                    if let Some(ref vname) = current_parsing_var {
+                        *var_file_counts.entry(vname.clone()).or_insert(0) += 1;
+                    }
+                }
+            } else if line.ends_with(".c") {
+                let file = line.trim();
+                if !file.is_empty() {
+                    sources.push(file.to_string());
+                    if let Some(ref vname) = current_parsing_var {
+                        *var_file_counts.entry(vname.clone()).or_insert(0) += 1;
+                    }
+                }
+                // Variable definition ends (last file without \)
+                if let Some(ref vname) = current_parsing_var {
+                    println!(
+                        "cargo:info=    {} parsing completed: {} files",
+                        vname,
+                        var_file_counts.get(vname).unwrap_or(&0)
+                    );
+                }
+                in_target_var = false;
+                current_parsing_var = None;
+            }
+        }
+    }
+    println!("cargo:info=  {} - found {} files", mk_file, sources.len());
+    sources
+}
+
+/// Determine if source file is WASM compatible
+///
+/// Filter out:
+/// - Platform-specific code (x86, arm, mips)
+/// - Assembly files (.s, .s.in)
+fn is_wasm_compatible(source: &str) -> bool {
+    // exclude platform-specific directories
+    if source.contains("/x86/") || source.contains("/arm/") || source.contains("/mips/") {
+        return false;
+    }
+
+    // exclude assembly files
+    if source.ends_with(".s") || source.ends_with(".s.in") {
+        return false;
+    }
+
+    true
 }
