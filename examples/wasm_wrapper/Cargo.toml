@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "opus-wasm-example"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+audiopus_sys = {path = "../.."}
+wasm-bindgen = "0.2"
+
+[profile.release]
+lto = true
+opt-level = "z"
