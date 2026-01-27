@@ -66,7 +66,10 @@ fn build_opus(is_static: bool) {
         let ninja_path = find_android_ninja().expect("Could not find ninja in Android SDK");
         let platform =
             env::var("CARGO_NDK_ANDROID_PLATFORM").expect("Could not find Android platform");
-        let android_abi = env::var("CARGO_NDK_ANDROID_TARGET").expect("Could not find Android ABI");
+
+        let android_abi = env::var("CARGO_NDK_ANDROID_TARGET")
+            .or_else(|_| env::var("ANDROID_ABI"))
+            .expect("Could not find Android ABI");
 
         opus_builder
             .define("CMAKE_TOOLCHAIN_FILE", cmake_toolchain_path)
