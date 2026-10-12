@@ -52,7 +52,12 @@ fn build_opus(is_static: bool) {
 
     opus_builder.profile("Release");
 
-    if is_static {
+    // Do not set `OPUS_STATIC_RUNTIME` if we are not building a static library,
+    // or if the target does not have `crt-static` feature enabled.
+    let crt_static = env::var("CARGO_CFG_TARGET_FEATURE")
+        .map(|features| features.split(',').any(|feature| feature == "crt-static"))
+        .unwrap_or(false);
+    if is_static && crt_static {
         opus_builder.define("OPUS_STATIC_RUNTIME", "ON");
     }
 
